@@ -24,6 +24,11 @@ namespace
 {
 bool ok = true;
 
+// M_PI is a POSIX/GNU extension, not standard C++, and MSVC does not define
+// it without _USE_MATH_DEFINES (which must precede every <cmath> include in
+// the translation unit, including transitive ones - too fragile to rely on).
+constexpr double kPi = 3.14159265358979323846;
+
 void check (bool condition, const char* description)
 {
     if (! condition)
@@ -43,7 +48,7 @@ void check (bool condition, const char* description)
 double magnitudeDb (double freqHz)
 {
     using namespace bbk::black19;
-    const double omega = 2.0 * M_PI * freqHz / static_cast<double> (sampleRateHz);
+    const double omega = 2.0 * kPi * freqHz / static_cast<double> (sampleRateHz);
 
     std::complex<double> acc { 0.0, 0.0 };
     for (int k = 0; k < numTaps; ++k)
