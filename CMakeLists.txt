@@ -29,13 +29,10 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
-# IDENTITY TEST BUILD: renamed product/bundle/code so this installs
-# alongside (not over) the real "BBK Black-19" plugin. The underlying
-# target name BBKBlack19 is kept so the .cpp/.h sources compile unchanged.
 juce_add_plugin(BBKBlack19
     VERSION 1.0.0
     COMPANY_NAME "BBK"
-    BUNDLE_ID "com.bbk.identitytest"
+    BUNDLE_ID "com.bbk.black19"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -43,9 +40,9 @@ juce_add_plugin(BBKBlack19
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Bbk1
-    PLUGIN_CODE Idt1
+    PLUGIN_CODE Bk19
     FORMATS VST3
-    PRODUCT_NAME "BBK IdentityTest"
+    PRODUCT_NAME "BBK Black-19"
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE
 )
