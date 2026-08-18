@@ -66,6 +66,21 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
     if (! valid192k.load())
         return; // hard safety bypass outside 192 kHz
 
+    const bool enabled = isEnabledForUI();
+    wetMix.setTargetValue (enabled ? 1.0 : 0.0);
+
+    // DIAGNOSTIC BUILD: true hard bypass. When disabled and the crossfade
+    // has already settled fully to dry, skip the delay-line/FIR/crossfade
+    // computation entirely rather than computing and discarding it every
+    // sample. JUCE hands processBlock a buffer that already contains the
+    // input audio, so doing nothing here is an exact, zero-cost passthrough
+    // - identical in behaviour to the identity-test plugin. This isolates
+    // whether merely running (and discarding the result of) the wet
+    // computation every sample is itself contributing to the reported
+    // glitches, separate from whether the computed values are correct.
+    if (! enabled && wetMix.getCurrentValue() <= 0.0)
+        return;
+
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
@@ -82,8 +97,6 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
         for (auto i = oldSize; i < channels.size(); ++i)
             channels[i].clear();
     }
-
-    wetMix.setTargetValue (isEnabledForUI() ? 1.0 : 0.0);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
