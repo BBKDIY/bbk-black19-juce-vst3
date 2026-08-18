@@ -34,10 +34,16 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     const bool requested = isEnabledForUI();
     wetMix.setCurrentAndTargetValue ((valid && requested) ? 1.0 : 0.0);
 
-    // At 192 kHz both wet and internal bypass paths are delayed by 9 samples,
-    // making ON/OFF time-aligned. At unsupported rates the plug-in is a true
-    // safety bypass and reports zero latency.
-    setLatencySamples (valid ? bbk::black19::groupDelaySamples : 0);
+    // DIAGNOSTIC BUILD: always report zero latency to the host, even though
+    // the FIR path still has a true 9-sample (46.9us) internal group delay
+    // (the dry path is still delayed to match it for a correct wet/dry
+    // crossfade). This isolates whether declaring non-zero latency via
+    // setLatencySamples() is what causes PatchWork/Audirvana to corrupt
+    // audio specifically during live/on-the-fly plugin insertion - the
+    // identity-test plugin, which never corrupted the signal, always
+    // reports zero latency and this is the only other behavioural
+    // difference between the two.
+    setLatencySamples (0);
 }
 
 bool BBKBlack19AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -74,10 +80,7 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
     // channel count that does not exactly match that (observed when hot-inserting
     // this plugin into an already-running chain). Guarantee the per-channel
     // delay-line state is always large enough before indexing into it, instead
-    // of trusting prepareToPlay's channel count alone - an undersized 'channels'
-    // vector here means out-of-bounds access and corrupted/garbage audio on
-    // every call, including while the internal bypass mix is fading toward dry,
-    // since this same process() path handles both wet and bypassed audio.
+    // of trusting prepareToPlay's channel count alone.
     if (static_cast<int> (channels.size()) < numChannels)
     {
         const auto oldSize = channels.size();
@@ -162,3 +165,4 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new BBKBlack19AudioProcessor();
 }
+ctrl:End
