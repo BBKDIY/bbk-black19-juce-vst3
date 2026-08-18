@@ -50,4 +50,32 @@ constexpr std::array<double, numTaps> makeTaps()
 }
 
 inline constexpr auto taps = makeTaps();
+
+// The taps sum to exactly 1.0 (correct steady-state/DC gain), but that
+// alone does not bound the filter's worst-case output level on transient
+// program material. The true worst-case peak gain for any input bounded
+// by +/-1.0 is the L1 norm of the impulse response (sum of absolute tap
+// values). Because this filter has negative side lobes, that L1 norm is
+// measurably greater than 1.0 (about 1.347, i.e. the wet path can momentarily
+// amplify a transient by roughly +2.6 dB above the source). On loud,
+// hot-mastered material this can push the filtered (wet) output past
+// 0 dBFS, which hard-clips at the DAC - an audible, digital-sounding
+// glitch that only ever appears on the wet path, since the dry/bypass
+// path is just an unmodified delayed copy of whatever headroom the
+// source already had. Scaling the wet output by 1/L1 guarantees it can
+// never exceed +/-1.0 for any input within +/-1.0, closing that failure
+// mode unconditionally rather than hoping typical program material stays
+// under the worst case.
+constexpr double makeWetSafetyGain()
+{
+    double sumAbs = 0.0;
+    for (int i = 0; i < numTaps; ++i)
+    {
+        const double v = taps[static_cast<std::size_t> (i)];
+        sumAbs += (v < 0.0 ? -v : v);
+    }
+    return sumAbs > 1.0 ? (1.0 / sumAbs) : 1.0;
+}
+
+inline constexpr double wetSafetyGain = makeWetSafetyGain();
 }
