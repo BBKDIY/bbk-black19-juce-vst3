@@ -34,15 +34,9 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     const bool requested = isEnabledForUI();
     wetMix.setCurrentAndTargetValue ((valid && requested) ? 1.0 : 0.0);
 
-    // DIAGNOSTIC BUILD: always report zero latency to the host, even though
-    // the FIR path still has a true 9-sample (46.9us) internal group delay
-    // (the dry path is still delayed to match it for a correct wet/dry
-    // crossfade). This isolates whether declaring non-zero latency via
-    // setLatencySamples() is what causes PatchWork/Audirvana to corrupt
-    // audio specifically during live/on-the-fly plugin insertion - the
-    // identity-test plugin, which never corrupted the signal, always
-    // reports zero latency and this is the only other behavioural
-    // difference between the two.
+    // Always report zero latency to the host, even though the FIR path
+    // still has a true 9-sample (46.9us) internal group delay (the dry
+    // path is still delayed to match it for a correct wet/dry crossfade).
     setLatencySamples (0);
 }
 
@@ -115,6 +109,16 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
                 wet += bbk::black19::taps[static_cast<std::size_t> (k)]
                      * state.history[static_cast<std::size_t> (index)];
             }
+
+            // The taps have unity DC gain, but a negative-side-lobe FIR like
+            // this one can still momentarily amplify transient content beyond
+            // 0 dBFS (worst-case peak gain = the L1 norm of the impulse
+            // response, which is > 1.0 here). Scale the wet output by the
+            // precomputed safety factor so it can never overshoot +/-1.0 and
+            // hard-clip at the DAC, regardless of program material. The dry
+            // path never needs this: it is an unmodified delayed copy of the
+            // source, which never introduces new headroom demands.
+            wet *= bbk::black19::wetSafetyGain;
 
             // Delay dry path by the FIR's 9-sample group delay for fair A/B.
             int dryIndex = state.writeIndex - bbk::black19::groupDelaySamples;
