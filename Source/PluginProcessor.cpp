@@ -83,6 +83,18 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
     if (! valid192k.load())
         return; // hard safety bypass outside 192 kHz
 
+    const bool enabled = isEnabledForUI();
+    wetMix.setTargetValue (enabled ? 1.0 : 0.0);
+
+    // True hard bypass: once disabled and the crossfade has fully settled to
+    // dry, skip the delay-line/FIR/crossfade computation entirely rather than
+    // computing and discarding it every sample. Keeps the audio thread's
+    // per-block workload minimal while the plugin is toggled off, instead of
+    // always paying for the full convolution regardless of whether the
+    // result is actually used.
+    if (! enabled && wetMix.getCurrentValue() <= 0.0)
+        return;
+
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
@@ -99,8 +111,6 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
         for (auto i = oldSize; i < channels.size(); ++i)
             channels[i].clear();
     }
-
-    wetMix.setTargetValue (isEnabledForUI() ? 1.0 : 0.0);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
