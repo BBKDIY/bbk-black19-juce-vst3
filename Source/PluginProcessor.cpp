@@ -27,6 +27,14 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
 
     const int requiredChannels = juce::jmax (getTotalNumInputChannels(), getTotalNumOutputChannels());
 
+    // Pre-allocate well beyond any channel count this plugin will realistically
+    // see, so the defensive check in process() never has to grow the vector -
+    // and therefore never has to heap-allocate - on the real-time audio
+    // thread. An allocation there can stall a single audio callback and cause
+    // a random, content-independent glitch even when average CPU load is low.
+    constexpr int channelHeadroom = 16;
+    const int channelsToAllocate = juce::jmax (requiredChannels, channelHeadroom);
+
     // Some hosts (observed with PatchWork) call prepareToPlay again mid-stream
     // with the same sample rate and channel count, e.g. during buffer/graph
     // renegotiation. A full reset here would zero the FIR delay line and snap
@@ -35,11 +43,11 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     // actually changed (or this is the very first call).
     const bool formatChanged = ! hasPrepared
                              || std::abs (sampleRate - lastPreparedSampleRate) > 0.5
-                             || static_cast<int> (channels.size()) != requiredChannels;
+                             || static_cast<int> (channels.size()) < channelsToAllocate;
 
     if (formatChanged)
     {
-        channels.resize (static_cast<std::size_t> (requiredChannels));
+        channels.resize (static_cast<std::size_t> (channelsToAllocate));
         for (auto& channel : channels)
             channel.clear();
 
@@ -98,12 +106,12 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
-    // Defensive: prepareToPlay sizes 'channels' from getTotalNumInputChannels()/
-    // getTotalNumOutputChannels(), but some hosts can call processBlock with a
-    // channel count that does not exactly match that (observed when hot-inserting
-    // this plugin into an already-running chain). Guarantee the per-channel
-    // delay-line state is always large enough before indexing into it, instead
-    // of trusting prepareToPlay's channel count alone.
+    // Defensive safety net only: prepareToPlay now pre-allocates well beyond
+    // any channel count this plugin should ever see (see channelHeadroom), so
+    // this should never actually need to grow the vector - and therefore
+    // never heap-allocate - here on the real-time audio thread. Kept as a
+    // last-resort guard against out-of-bounds indexing if a host ever does
+    // something unexpected.
     if (static_cast<int> (channels.size()) < numChannels)
     {
         const auto oldSize = channels.size();
