@@ -59,10 +59,18 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     lastPreparedSampleRate = sampleRate;
     hasPrepared = true;
 
-    // Always report zero latency to the host, even though the FIR path
-    // still has a true 9-sample (46.9us) internal group delay (the dry
-    // path is still delayed to match it for a correct wet/dry crossfade).
-    setLatencySamples (0);
+    // Report our true group delay (9 samples / 46.9us at 192kHz) instead of
+    // claiming zero latency. Both the wet FIR path and the time-aligned dry
+    // path are delayed by groupDelaySamples, so the plugin's actual output is
+    // uniformly shifted relative to its input. Some hosts perform their own
+    // per-buffer latency compensation / resynchronisation based on the
+    // reported value; understating it as zero was found (via sample-accurate
+    // analysis) to correlate with a small discontinuity recurring at a fixed
+    // phase within every hardware audio buffer (e.g. every 1024 samples on a
+    // Focusrite Clarett+), consistent with the host correcting for a delay it
+    // did not know we were introducing. Reporting the true value lets the
+    // host's own PDC keep everything correctly aligned instead.
+    setLatencySamples (bbk::black19::groupDelaySamples);
 }
 
 bool BBKBlack19AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -130,10 +138,8 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
             auto* data = buffer.getWritePointer (ch);
             const double x = static_cast<double> (data[sample]);
 
-            // Store current input sample.
             state.history[static_cast<std::size_t> (state.writeIndex)] = x;
 
-            // FIR output y[n] = sum_k h[k] x[n-k].
             double wet = 0.0;
             for (int k = 0; k < bbk::black19::numTaps; ++k)
             {
@@ -145,17 +151,8 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
                      * state.history[static_cast<std::size_t> (index)];
             }
 
-            // The taps have unity DC gain, but a negative-side-lobe FIR like
-            // this one can still momentarily amplify transient content beyond
-            // 0 dBFS (worst-case peak gain = the L1 norm of the impulse
-            // response, which is > 1.0 here). Scale the wet output by the
-            // precomputed safety factor so it can never overshoot +/-1.0 and
-            // hard-clip at the DAC, regardless of program material. The dry
-            // path never needs this: it is an unmodified delayed copy of the
-            // source, which never introduces new headroom demands.
             wet *= bbk::black19::wetSafetyGain;
 
-            // Delay dry path by the FIR's 9-sample group delay for fair A/B.
             int dryIndex = state.writeIndex - bbk::black19::groupDelaySamples;
             if (dryIndex < 0)
                 dryIndex += bbk::black19::numTaps;
