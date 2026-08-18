@@ -69,6 +69,23 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
+    // Defensive: prepareToPlay sizes 'channels' from getTotalNumInputChannels()/
+    // getTotalNumOutputChannels(), but some hosts can call processBlock with a
+    // channel count that does not exactly match that (observed when hot-inserting
+    // this plugin into an already-running chain). Guarantee the per-channel
+    // delay-line state is always large enough before indexing into it, instead
+    // of trusting prepareToPlay's channel count alone - an undersized 'channels'
+    // vector here means out-of-bounds access and corrupted/garbage audio on
+    // every call, including while the internal bypass mix is fading toward dry,
+    // since this same process() path handles both wet and bypassed audio.
+    if (static_cast<int> (channels.size()) < numChannels)
+    {
+        const auto oldSize = channels.size();
+        channels.resize (static_cast<std::size_t> (numChannels));
+        for (auto i = oldSize; i < channels.size(); ++i)
+            channels[i].clear();
+    }
+
     wetMix.setTargetValue (isEnabledForUI() ? 1.0 : 0.0);
 
     for (int sample = 0; sample < numSamples; ++sample)
