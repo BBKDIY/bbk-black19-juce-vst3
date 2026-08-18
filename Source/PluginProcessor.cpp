@@ -165,4 +165,3 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new BBKBlack19AudioProcessor();
 }
-ctrl:End
