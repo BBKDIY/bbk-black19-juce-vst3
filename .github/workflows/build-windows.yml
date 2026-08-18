@@ -1,4 +1,4 @@
-name: Build Windows VST3 (JUCE, real MSVC)
+name: Build Windows VST3 (JUCE Identity Test, real MSVC)
 
 on:
   push:
@@ -31,14 +31,14 @@ jobs:
       - name: Locate the built .vst3
         shell: pwsh
         run: |
-          $found = Get-ChildItem -Path build -Recurse -Filter "BBK Black-19.vst3" | Select-Object -First 1
-          if (-not $found) { throw "BBK Black-19.vst3 not found under build/ - build likely failed." }
+          $found = Get-ChildItem -Path build -Recurse -Filter "BBK IdentityTest.vst3" | Select-Object -First 1
+          if (-not $found) { throw "BBK IdentityTest.vst3 not found under build/ - build likely failed." }
           Write-Host "Found: $($found.FullName)"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item $found.FullName -Destination "dist/BBK Black-19.vst3" -Recurse
+          Copy-Item $found.FullName -Destination "dist/BBK IdentityTest.vst3" -Recurse
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BBK-Black19-Windows-VST3-JUCE-MSVC
-          path: dist/BBK Black-19.vst3
+          name: BBK-IdentityTest-Windows-VST3-JUCE-MSVC
+          path: dist/BBK IdentityTest.vst3
