@@ -30,14 +30,14 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     for (auto& channel : channels)
         channel.clear();
 
-    wetMix.reset (sampleRate, 0.010);
-    wetMix.setCurrentAndTargetValue (0.0);
+    wetMix.reset (sampleRate, 0.010); // 10 ms click-free A/B crossfade
+    const bool requested = isEnabledForUI();
+    wetMix.setCurrentAndTargetValue ((valid && requested) ? 1.0 : 0.0);
 
-    // IDENTITY TEST BUILD: no DSP, no delay line, zero latency always.
-    // This build exists purely to test whether inserting ANY JUCE/VST3
-    // plugin into this 192 kHz signal path causes slow-motion corruption,
-    // independent of Black-19's own FIR/delay-line/crossfade code.
-    setLatencySamples (0);
+    // At 192 kHz both wet and internal bypass paths are delayed by 9 samples,
+    // making ON/OFF time-aligned. At unsupported rates the plug-in is a true
+    // safety bypass and reports zero latency.
+    setLatencySamples (valid ? bbk::black19::groupDelaySamples : 0);
 }
 
 bool BBKBlack19AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -61,11 +61,54 @@ bool BBKBlack19AudioProcessor::isEnabledForUI() const noexcept
 }
 
 template <typename SampleType>
-void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>&)
+void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
 {
-    // IDENTITY TEST BUILD: intentionally does nothing. The AudioBuffer JUCE
-    // hands to processBlock already contains the input audio; leaving it
-    // untouched is a perfect, zero-latency, zero-DSP passthrough.
+    if (! valid192k.load())
+        return; // hard safety bypass outside 192 kHz
+
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    wetMix.setTargetValue (isEnabledForUI() ? 1.0 : 0.0);
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const double mix = wetMix.getNextValue();
+
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            auto& state = channels[static_cast<std::size_t> (ch)];
+            auto* data = buffer.getWritePointer (ch);
+            const double x = static_cast<double> (data[sample]);
+
+            // Store current input sample.
+            state.history[static_cast<std::size_t> (state.writeIndex)] = x;
+
+            // FIR output y[n] = sum_k h[k] x[n-k].
+            double wet = 0.0;
+            for (int k = 0; k < bbk::black19::numTaps; ++k)
+            {
+                int index = state.writeIndex - k;
+                if (index < 0)
+                    index += bbk::black19::numTaps;
+
+                wet += bbk::black19::taps[static_cast<std::size_t> (k)]
+                     * state.history[static_cast<std::size_t> (index)];
+            }
+
+            // Delay dry path by the FIR's 9-sample group delay for fair A/B.
+            int dryIndex = state.writeIndex - bbk::black19::groupDelaySamples;
+            if (dryIndex < 0)
+                dryIndex += bbk::black19::numTaps;
+
+            const double dry = state.history[static_cast<std::size_t> (dryIndex)];
+            const double y = dry + mix * (wet - dry);
+            data[sample] = static_cast<SampleType> (y);
+
+            if (++state.writeIndex == bbk::black19::numTaps)
+                state.writeIndex = 0;
+        }
+    }
 }
 
 void BBKBlack19AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
