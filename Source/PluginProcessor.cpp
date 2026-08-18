@@ -59,18 +59,16 @@ void BBKBlack19AudioProcessor::prepareToPlay (double sampleRate, int)
     lastPreparedSampleRate = sampleRate;
     hasPrepared = true;
 
-    // Report our true group delay (9 samples / 46.9us at 192kHz) instead of
-    // claiming zero latency. Both the wet FIR path and the time-aligned dry
-    // path are delayed by groupDelaySamples, so the plugin's actual output is
-    // uniformly shifted relative to its input. Some hosts perform their own
-    // per-buffer latency compensation / resynchronisation based on the
-    // reported value; understating it as zero was found (via sample-accurate
-    // analysis) to correlate with a small discontinuity recurring at a fixed
-    // phase within every hardware audio buffer (e.g. every 1024 samples on a
-    // Focusrite Clarett+), consistent with the host correcting for a delay it
-    // did not know we were introducing. Reporting the true value lets the
-    // host's own PDC keep everything correctly aligned instead.
-    setLatencySamples (bbk::black19::groupDelaySamples);
+    // Report zero latency to the host. Testing showed that reporting our true
+    // group delay (9 samples) instead triggers host-side latency compensation
+    // that made the active-state glitches WORSE and also broke both bypass
+    // paths (PatchWork's own bypass and this plugin's own bypass), which had
+    // previously been confirmed clean at zero reported latency. So: revert to
+    // zero, even though the FIR path still has a true 9-sample (46.9us)
+    // internal group delay (the dry path is delayed to match it for a correct
+    // wet/dry crossfade). The active-state glitch root cause is therefore NOT
+    // a latency-reporting mismatch - continue investigating elsewhere.
+    setLatencySamples (0);
 }
 
 bool BBKBlack19AudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
