@@ -20,6 +20,7 @@ public:
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     void processBlock (juce::AudioBuffer<double>&, juce::MidiBuffer&) override;
     bool supportsDoublePrecisionProcessing() const override { return false; }
+
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
@@ -67,6 +68,13 @@ private:
 
     std::atomic<double> currentSampleRate { 0.0 };
     std::atomic<bool> valid192k { false };
+
+    // Tracks whether prepareToPlay has actually changed format since the last
+    // call, so a redundant re-prepare (same sample rate, same channel count -
+    // observed happening mid-stream in PatchWork) does not zero the FIR delay
+    // line or snap the wet/dry crossfade and cause an audible click.
+    double lastPreparedSampleRate = 0.0;
+    bool hasPrepared = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BBKBlack19AudioProcessor)
 };
