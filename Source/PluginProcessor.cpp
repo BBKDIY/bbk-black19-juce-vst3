@@ -102,14 +102,22 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
 
     // True hard bypass: once disabled and the crossfade has fully settled to
     // dry, skip the delay-line/FIR/crossfade computation entirely rather than
-    // computing and discarding it every sample.
+    // computing and discarding it every sample. Keeps the audio thread's
+    // per-block workload minimal while the plugin is toggled off, instead of
+    // always paying for the full convolution regardless of whether the
+    // result is actually used.
     if (! enabled && wetMix.getCurrentValue() <= 0.0)
         return;
 
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
-    // Defensive safety net only: see prepareToPlay's channelHeadroom.
+    // Defensive safety net only: prepareToPlay now pre-allocates well beyond
+    // any channel count this plugin should ever see (see channelHeadroom), so
+    // this should never actually need to grow the vector - and therefore
+    // never heap-allocate - here on the real-time audio thread. Kept as a
+    // last-resort guard against out-of-bounds indexing if a host ever does
+    // something unexpected.
     if (static_cast<int> (channels.size()) < numChannels)
     {
         const auto oldSize = channels.size();
@@ -118,26 +126,10 @@ void BBKBlack19AudioProcessor::process (juce::AudioBuffer<SampleType>& buffer)
             channels[i].clear();
     }
 
-    // DIAGNOSTIC CHANGE: two known-working sibling plugins (E280F_Triode,
-    // ILD_Matrix) both read their parameter ONCE per block and apply it
-    // uniformly across the whole block - neither does per-sample smoothing.
-    // Black-19 was the only one of the three calling wetMix.getNextValue()
-    // every single sample. To isolate whether that per-sample ramp is the
-    // trigger for the active-state glitches (which a same-setup, same-sweep
-    // test with ILD_Matrix did NOT reproduce), compute the mix value ONCE
-    // here at the top of the block and hold it constant for every sample in
-    // the block, instead of interpolating sample-by-sample. wetMix.skip()
-    // still advances the smoother's internal ramp state by the full block
-    // length, so the crossfade still progresses across blocks (just at
-    // block-granularity instead of sample-granularity - a few blocks of
-    // "stepped" transition instead of a perfectly smooth 10ms ramp, which is
-    // an acceptable trade for this diagnostic). Delay line, FIR math, and
-    // hard-bypass logic are all untouched.
-    const double mix = wetMix.getCurrentValue();
-    wetMix.skip (numSamples);
-
     for (int sample = 0; sample < numSamples; ++sample)
     {
+        const double mix = wetMix.getNextValue();
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto& state = channels[static_cast<std::size_t> (ch)];
